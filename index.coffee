@@ -17,14 +17,14 @@ class WgetError
 
 module.exports = class Wget
   constructor: (@config) ->
-    resource_stream = stream.Readable()
-    resource_stream._read = ->
-    @downloader = @fetchResource(@concurrent || 5)
-    resource_stream.pipe(@downloader)
-    @transforms = new Transforms(resource_stream)
     throw new WgetError("Requires target directory") unless @config.target
+    resource_stream = stream.Readable()
+    #hack for streams
+    resource_stream._read = ->
+    resource_stream.pipe(@fetchResource(@config.maxConcurrency || 15))
+    @transforms = new Transforms(resource_stream)
 
-  fetchResource: (maxConcurrency) =>
+  fetchResource: (maxConcurrency, cb = ->) =>
     _fetch = @fetch
     through2Concurrent.obj maxConcurrency: maxConcurrency, (chunk, enc, cb) ->
       @push(_fetch(String(chunk)))
@@ -32,10 +32,13 @@ module.exports = class Wget
     .on 'data', (data) =>
       #create relative resource
       relpath = path.join(@config.target, data.uri.hostname, data.uri.path)
-      #TODO: if the relpath is stylesheet we need to rewrite that too
-      @mkdir path.dirname(relpath),  ->
+      @mkdir path.dirname(relpath),  =>
         out = fs.createWriteStream(relpath)
+        if relpath.match(/\.css$/)
+          #stylesheet, pipe through rewrite
+          data = data.pipe(@transforms.css_url_to_relative(new YouAreI(data.uri.href)))
         data.pipe(out)
+    .on 'end', cb
 
   get: (url, isIndex) =>
     youarei = new YouAreI(url)
@@ -46,6 +49,7 @@ module.exports = class Wget
       out = fs.createWriteStream(target + '/index.html')
       stream
         .pipe(tokenize())
+        .pipe(@transforms.remove_base)
         .pipe(@transforms.relative_to_absolute(youarei))
         .pipe(@transforms.deps_to_relative("script, link, img", youarei))
         .pipe(@transforms.inline_styles_to_relative(youarei))

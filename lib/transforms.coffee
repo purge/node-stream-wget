@@ -10,8 +10,14 @@ types =
   a: 'href'
   img: 'src'
 
+remove = (e) ->
+  tr = through.obj (row, enc, next) -> next()
+  tr.pipe(e.createStream()).pipe(tr)
+
 module.exports = class Transforms
   constructor: (@stream) ->
+
+  remove_base: select "base", remove
 
   #rewrite relative urls to absolutes
   relative_to_absolute: (uri, selector="a") ->
@@ -22,6 +28,15 @@ module.exports = class Transforms
         e.setAttribute(attrName, uri.toString())
       e
 
+  css_url_to_relative: (request_uri) =>
+    rast = @_rewrite_ast.bind(@, @rewrite.bind(@,request_uri))
+    through.obj (chunk, enc, cb) ->
+      ast = css.parse(chunk.toString())
+      rast(ast)
+      ccss = css.stringify(ast)
+      @push(ccss)
+      cb()
+
   style_blocks_to_relative: (request_uri) =>
     rast = @_rewrite_ast.bind(@, @rewrite.bind(@,request_uri))
     select "style", (e) =>
@@ -30,7 +45,6 @@ module.exports = class Transforms
           ast = css.parse(String(row[1]) )
           rast(ast)
           ccss = css.stringify(ast)
-          console.log ccss
           @push([ row[0], ccss ])
         else
           @push(row)
@@ -54,10 +68,8 @@ module.exports = class Transforms
   _rewrite_ast: (rewrite, ast) =>
     _.each ast.stylesheet.rules, (rule) ->
       _.each rule.declarations, (dec) ->
-        console.log dec.value
-        nval = dec.value.replace /url\((.*)\)/, (all, m) ->
+        nval = dec.value?.replace /url\((.*)\)/, (all, m) ->
           if nurl = rewrite(m)
-            console.log "XXXX" + nurl.path_to_string()
             return "url(#{nurl.path_to_string()})"
           all
         dec.value = nval if nval
@@ -65,15 +77,18 @@ module.exports = class Transforms
 
   #rewrite required resources to a local source and initiate download
   rewrite: (request_uri, target) =>
-    if target?.match(/^(http:)|\//)
+    if target and !target.match(/data:/)
 
-      if target.match(/^http:/)
+      if target.match(/^https?:/)
         remote_url = new YouAreI(target)
-      #if target.substr(0,1) == '/'
       else
-        #relative to document
         remote_url = request_uri.clone()
-        remote_url.path_set(target)
+        if target.substr(0,1) == '/'
+          remote_url.path_set(target)
+        else
+          remote_url.path_set(remote_url.path_to_string() + target)
+
+      console.warn "adding #{remote_url.toString()}"
 
       @stream.push(remote_url.toString())
 
@@ -81,26 +96,13 @@ module.exports = class Transforms
       remote_url
 
   deps_to_relative: (selector, request_uri) ->
+    rewrite =  @rewrite.bind(@,request_uri)
+
     select selector, (e) =>
       attrName = types[e.name.toLowerCase()]
       target = e.getAttribute(attrName)
-
-      #TODO: make this always download resource unless config option
-      #get all relative or non-secure resources
-      if target?.match(/^(http:)|\//)
-        if target.match(/^http:/)
-          remote_url = new YouAreI(target)
-        #if target.substr(0,1) == '/'
-        else
-          #relative to document
-          remote_url = request_uri.clone()
-          remote_url.path_set(target)
-
-        @stream.push(remote_url.toString())
-
-        remote_url.path_set( [ remote_url.host(), remote_url.path_to_string()].join("/"))
-        e.setAttribute(attrName, remote_url.path_to_string())
-
+      if nurl = rewrite(target)
+        e.setAttribute(attrName, nurl.path_to_string())
       e
 
   toHTML: ->
