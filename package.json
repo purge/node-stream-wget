@@ -1,8 +1,8 @@
 {
-  "name": "wget-stream",
+  "name": "stream-wget",
   "version": "0.0.1",
   "description": "",
-  "main": "index.js",
+  "main": "index.coffee",
   "dependencies": {
     "async": "^0.9.0",
     "coffee-script": "^1.9.0",
@@ -25,12 +25,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/purge/node-wget-stream.git"
+    "url": "https://github.com/purge/node-stream-wget.git"
   },
-  "author": "Simon Elliott",
+  "author": "Simon Elliott <simon@papercreatures.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/purge/node-wget-stream/issues"
+    "url": "https://github.com/purge/node-stream-wget/issues"
   },
-  "homepage": "https://github.com/purge/node-wget-stream"
+  "homepage": "https://github.com/purge/node-stream-wget"
 }
