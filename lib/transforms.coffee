@@ -15,7 +15,7 @@ remove = (e) ->
   tr.pipe(e.createStream()).pipe(tr)
 
 module.exports = class Transforms
-  constructor: (@stream) ->
+  constructor: (@stream, @base) ->
 
   remove_base: select "base", remove
 
@@ -28,8 +28,8 @@ module.exports = class Transforms
         e.setAttribute(attrName, uri.toString())
       e
 
-  css_url_to_relative: (request_uri) =>
-    rast = @_rewrite_ast.bind(@, @rewrite.bind(@,request_uri))
+  css_url_to_relative: =>
+    rast = @_rewrite_ast
     through.obj (chunk, enc, cb) ->
       ast = css.parse(chunk.toString())
       rast(ast)
@@ -37,8 +37,8 @@ module.exports = class Transforms
       @push(ccss)
       cb()
 
-  style_blocks_to_relative: (request_uri) =>
-    rast = @_rewrite_ast.bind(@, @rewrite.bind(@,request_uri))
+  style_blocks_to_relative: =>
+    rast = @_rewrite_ast
     select "style", (e) =>
       tr = through.obj (row, buf, next) ->
         if row[0] == 'text'
@@ -52,8 +52,8 @@ module.exports = class Transforms
 
       tr.pipe(e.createStream()).pipe(tr)
 
-  inline_styles_to_relative: (request_uri) =>
-    rast = @_rewrite_ast.bind(@, @rewrite.bind(@,request_uri))
+  inline_styles_to_relative: =>
+    rast = @_rewrite_ast
 
     select "*[style]", (e) =>
       body = e.getAttribute('style')
@@ -65,18 +65,20 @@ module.exports = class Transforms
       e
 
   #search ast for relative urls
-  _rewrite_ast: (rewrite, ast) =>
+  _rewrite_ast: (ast) =>
+    _rewrite = @rewrite
     _.each ast.stylesheet.rules, (rule) ->
       _.each rule.declarations, (dec) ->
         nval = dec.value?.replace /url\((.*)\)/, (all, m) ->
-          if nurl = rewrite(m)
+          if nurl = _rewrite(m)
             return "url(#{nurl.path_to_string()})"
           all
         dec.value = nval if nval
     ast
 
   #rewrite required resources to a local source and initiate download
-  rewrite: (request_uri, target) =>
+  rewrite: (target) =>
+    request_uri = new YouAreI(@base)
     if target and !target.match(/data:/)
 
       if target.match(/^https?:/)
@@ -88,9 +90,8 @@ module.exports = class Transforms
         else
           remote_url.path_set(remote_url.path_to_string() + target)
 
-      console.warn "adding #{remote_url.toString()}"
-
-      @stream.push(remote_url.toString())
+      #console.warn "adding #{remote_url.toString()}"
+      @stream.push([remote_url.toString(), 0])
 
       remote_url.path_set( [ remote_url.host(), remote_url.path_to_string()].join("/"))
       remote_url
